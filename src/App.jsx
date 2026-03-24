@@ -210,24 +210,36 @@ export default function App() {
       isRecordingRef.current = true;
       setIsRecording(true);
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      mediaRecorder.onstop = handleStopRecordingComplete;
-
-      mediaRecorder.start();
+      // 1. Iniciar a API de Reconhecimento de Voz primeiro (Prioridade para a transcrição)
       if (recognitionRef.current) {
-        recognitionRef.current.start();
+        try {
+          recognitionRef.current.start();
+        } catch (e) {
+          console.error('Erro ao iniciar reconhecimento:', e);
+        }
       } else {
-        setTranscript('A gravar... (Reconhecimento de voz em tempo real não suportado neste navegador)');
+        setTranscript('A gravar... (Reconhecimento de voz não suportado neste navegador)');
+      }
+
+      // 2. Verificação de Dispositivo Móvel para prevenir bloqueio de microfone
+      // O Android bloqueia o acesso simultâneo ao microfone pelo MediaRecorder e pelo SpeechRecognition.
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+      if (!isMobile) {
+        // No Desktop, podemos fazer os dois ao mesmo tempo
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+
+        mediaRecorder.onstop = handleStopRecordingComplete;
+        mediaRecorder.start();
       }
     } catch (error) {
       isRecordingRef.current = false;
@@ -241,13 +253,20 @@ export default function App() {
     isRecordingRef.current = false; // Indica ao onend para não reiniciar
     setIsRecording(false);
     
+    // Parar o reconhecimento de voz
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+
+    // Parar o MediaRecorder se existir (Desktop)
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
       // Parar as tracks para liberar o microfone do sistema
       mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+    } else {
+      // Em Mobile (onde o MediaRecorder não foi iniciado para evitar conflitos),
+      // forçamos a chamada da conclusão manualmente
+      handleStopRecordingComplete();
     }
   };
 
