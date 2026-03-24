@@ -51,11 +51,13 @@ export default function App() {
   const activeCellRef = useRef({ rIndex: 0, cIndex: 0 });
   const columnsRef = useRef(columns);
   const rowsRef = useRef(rows);
+  const transcriptRef = useRef(transcript); // Nova referência para a transcrição
 
   // --- Sincronização de Refs ---
   useEffect(() => { inputModeRef.current = inputMode; }, [inputMode]);
   useEffect(() => { columnsRef.current = columns; }, [columns]);
   useEffect(() => { rowsRef.current = rows; }, [rows]);
+  useEffect(() => { transcriptRef.current = transcript; }, [transcript]); // Mantém a referência atualizada em tempo real
 
   // Injetar fonte Montserrat
   useEffect(() => {
@@ -273,30 +275,64 @@ export default function App() {
   // --- Função Auxiliar: Gerar Payload ---
   const generatePayload = () => {
     return {
-      quantidade_linhas: rows.length,
-      lista_referencias: rows.map(r => Number(r.vr) || 0),
-      quantidade_colunas_vm: columns.length,
-      nomes_colunas: columns.map(c => c.toLowerCase()),
-      texto_transcrito: transcript
+      quantidade_linhas: rowsRef.current.length,
+      lista_referencias: rowsRef.current.map(r => Number(r.vr) || 0),
+      quantidade_colunas_vm: columnsRef.current.length,
+      nomes_colunas: columnsRef.current.map(c => c.toLowerCase()),
+      texto_transcrito: transcriptRef.current // Usa sempre a transcrição mais recente
     };
   };
 
-  // --- Lógica da IA (Mock API Removido) ---
+  // --- Lógica da IA (Integração com API Real) ---
   const handleStopRecordingComplete = async () => {
     const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-    console.log('Áudio guardado como Blob:', audioBlob);
+    console.log('Áudio guardado como Blob (apenas Desktop):', audioBlob);
     
     // Preparar Payload usando a função auxiliar
     const payload = generatePayload();
     console.log('Payload gerado pronto para a API:', payload);
 
-    // O Mock automático foi desativado. 
-    // Usa a caixa de texto abaixo para testar o preenchimento manualmente.
+    // Chamar a API apenas se o modo selecionado for "ai" e houver texto transcrito
+    if (inputModeRef.current === 'ai' && payload.texto_transcrito.trim() !== '') {
+      setIsProcessing(true);
+      try {
+        const response = await fetch('https://integra.arkmeds.com/webhook/c4a548f2-0797-4454-9365-e943468d6c04', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Basic d2ViaG9va191c2VyOjkxZGMxMTY2Njk='
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          throw new Error(`Erro na API: ${response.status} - ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        console.log('Resposta recebida do Webhook:', data);
+
+        if (data && data.leituras) {
+          applyMockData(data); // A função aproveita a mesma estrutura para distribuir os dados
+        } else {
+          console.warn('A resposta da API não contém a propriedade "leituras":', data);
+        }
+
+      } catch (error) {
+        console.error('Erro ao chamar a API da IA:', error);
+        alert('Houve uma falha ao comunicar com a Inteligência Artificial. Verifique a consola para mais detalhes.');
+      } finally {
+        setIsProcessing(false);
+      }
+    }
   };
 
   const applyMockData = (data) => {
+    const currentRows = rowsRef.current;
+    const currentCols = columnsRef.current;
+
     // Fundir os dados recebidos com as linhas atuais baseando-se no VR ou ID
-    const updatedRows = rows.map((row, index) => {
+    const updatedRows = currentRows.map((row, index) => {
       // Tentar encontrar correspondência pelo VR, senão pelo índice/id
       const leitura = data.leituras.find(l => String(l.vr) === String(row.vr)) || data.leituras[index];
       
@@ -305,7 +341,7 @@ export default function App() {
         // Mapear os valores medidos da resposta (vm1, vm2...) para as colunas atuais (VM1, VM2...)
         Object.keys(leitura.valores_medidos).forEach(key => {
           const upperKey = key.toUpperCase();
-          if (columns.includes(upperKey)) {
+          if (currentCols.includes(upperKey)) {
             newVms[upperKey] = leitura.valores_medidos[key];
           }
         });
