@@ -20,7 +20,7 @@ import {
 export default function App() {
   // --- Estados da Interface ---
   const [view, setView] = useState('calibration');
-  const [isModalOpen, setIsModalOpen] = useState(false); // Estado para controlar o modal do payload
+  const [isModalOpen, setIsModalOpen] = useState(false);
   
   // --- Estados da Tabela ---
   const [columns, setColumns] = useState(['VM1', 'VM2', 'VM3']);
@@ -34,30 +34,29 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [manualJson, setManualJson] = useState('{\n  "leituras": [\n    {\n      "id_linha": 1,\n      "vr": 60,\n      "valores_medidos": {\n        "vm1": 60.5,\n        "vm2": 62,\n        "vm3": 63\n      }\n    }\n  ]\n}'); // Estado para o input manual
+  const [manualJson, setManualJson] = useState('{\n  "leituras": [\n    {\n      "id_linha": 1,\n      "vr": 60,\n      "valores_medidos": {\n        "vm1": 60.5,\n        "vm2": 62,\n        "vm3": 63\n      }\n    }\n  ]\n}');
   
   // --- Novos Estados: Modo Regex ---
-  const [inputMode, setInputMode] = useState('ai'); // 'ai' ou 'regex'
+  const [inputMode, setInputMode] = useState('ai');
   const [activeCell, setActiveCell] = useState({ rIndex: 0, cIndex: 0 });
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const recognitionRef = useRef(null);
   
-  // Refs para manter o estado atualizado dentro dos eventos do SpeechRecognition
   const fullTranscriptRef = useRef(''); 
   const isRecordingRef = useRef(false);
   const inputModeRef = useRef('ai');
   const activeCellRef = useRef({ rIndex: 0, cIndex: 0 });
   const columnsRef = useRef(columns);
   const rowsRef = useRef(rows);
-  const transcriptRef = useRef(transcript); // Nova referência para a transcrição
+  const transcriptRef = useRef(transcript);
 
   // --- Sincronização de Refs ---
   useEffect(() => { inputModeRef.current = inputMode; }, [inputMode]);
   useEffect(() => { columnsRef.current = columns; }, [columns]);
   useEffect(() => { rowsRef.current = rows; }, [rows]);
-  useEffect(() => { transcriptRef.current = transcript; }, [transcript]); // Mantém a referência atualizada em tempo real
+  useEffect(() => { transcriptRef.current = transcript; }, [transcript]);
 
   // Injetar fonte Montserrat
   useEffect(() => {
@@ -101,7 +100,6 @@ export default function App() {
 
   // --- Lógica de Áudio e Reconhecimento de Voz ---
   useEffect(() => {
-    // Configurar SpeechRecognition se disponível (Chrome/Edge)
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
@@ -115,11 +113,10 @@ export default function App() {
 
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const transcriptSegment = event.results[i][0].transcript;
-          // Se a API identificar que o pedaço de frase está finalizado, guardamos no final
           if (event.results[i].isFinal) {
             newFinalTranscript += transcriptSegment + ' ';
             
-            // --- NOVA LÓGICA MODO REGEX (SEQUENCIAL) ---
+            // --- LÓGICA MODO REGEX (SEQUENCIAL) ---
             if (inputModeRef.current === 'regex') {
               const matches = transcriptSegment.match(/\d+([.,]\d{1,2})?/g);
               if (matches) {
@@ -135,7 +132,6 @@ export default function App() {
                       value: match.replace(',', '.')
                     });
 
-                    // Avançar célula
                     currentCIdx++;
                     if (currentCIdx >= columnsRef.current.length) {
                       currentCIdx = 0;
@@ -144,11 +140,9 @@ export default function App() {
                   }
                 });
 
-                // Atualizar refs e estados visuais
                 activeCellRef.current = { rIndex: currentRIdx, cIndex: currentCIdx };
                 setActiveCell({ rIndex: currentRIdx, cIndex: currentCIdx });
 
-                // Aplicar as atualizações na tabela num único ciclo (batching)
                 if (updates.length > 0) {
                   setRows(prevRows => {
                     let newRows = [...prevRows];
@@ -167,20 +161,15 @@ export default function App() {
                 }
               }
             }
-            // --- FIM LÓGICA MODO REGEX ---
-
           } else {
-            // Senão, é um pedaço provisório em tempo real
             interimTranscript += transcriptSegment;
           }
         }
 
-        // Acumular as partes finais no histórico consolidado
         if (newFinalTranscript) {
           fullTranscriptRef.current += newFinalTranscript;
         }
 
-        // A transcrição visível será o histórico completo + o provisório atual
         setTranscript(fullTranscriptRef.current + interimTranscript);
       };
 
@@ -189,8 +178,6 @@ export default function App() {
       };
 
       recognition.onend = () => {
-        // Se a gravação parou por timeout de silêncio (mas o utilizador não clicou em parar)
-        // Reiniciamos o reconhecimento automaticamente
         if (isRecordingRef.current) {
           try {
             recognition.start();
@@ -206,13 +193,11 @@ export default function App() {
 
   const startRecording = async () => {
     try {
-      // Limpar estados anteriores
       setTranscript('');
       fullTranscriptRef.current = '';
       isRecordingRef.current = true;
       setIsRecording(true);
 
-      // 1. Iniciar a API de Reconhecimento de Voz primeiro (Prioridade para a transcrição)
       if (recognitionRef.current) {
         try {
           recognitionRef.current.start();
@@ -223,12 +208,9 @@ export default function App() {
         setTranscript('A gravar... (Reconhecimento de voz não suportado neste navegador)');
       }
 
-      // 2. Verificação de Dispositivo Móvel para prevenir bloqueio de microfone
-      // O Android bloqueia o acesso simultâneo ao microfone pelo MediaRecorder e pelo SpeechRecognition.
       const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
       if (!isMobile) {
-        // No Desktop, podemos fazer os dois ao mesmo tempo
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const mediaRecorder = new MediaRecorder(stream);
         mediaRecorderRef.current = mediaRecorder;
@@ -252,55 +234,64 @@ export default function App() {
   };
 
   const stopRecording = () => {
-    isRecordingRef.current = false; // Indica ao onend para não reiniciar
+    isRecordingRef.current = false;
     setIsRecording(false);
     
-    // Parar o reconhecimento de voz
     if (recognitionRef.current) {
       recognitionRef.current.stop();
     }
 
-    // Parar o MediaRecorder se existir (Desktop)
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
-      // Parar as tracks para liberar o microfone do sistema
       mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
     } else {
-      // Em Mobile (onde o MediaRecorder não foi iniciado para evitar conflitos),
-      // forçamos a chamada da conclusão manualmente
       handleStopRecordingComplete();
     }
   };
 
-  // --- Função Auxiliar: Gerar Payload ---
   const generatePayload = () => {
     return {
       quantidade_linhas: rowsRef.current.length,
       lista_referencias: rowsRef.current.map(r => Number(r.vr) || 0),
       quantidade_colunas_vm: columnsRef.current.length,
       nomes_colunas: columnsRef.current.map(c => c.toLowerCase()),
-      texto_transcrito: transcriptRef.current // Usa sempre a transcrição mais recente
+      texto_transcrito: transcriptRef.current
     };
   };
 
-  // --- Lógica da IA (Integração com API Real) ---
+  // --- Lógica da IA (Integração com API Real e Auth Seguro) ---
   const handleStopRecordingComplete = async () => {
     const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-    console.log('Áudio guardado como Blob (apenas Desktop):', audioBlob);
+    console.log('Áudio guardado como Blob:', audioBlob);
     
-    // Preparar Payload usando a função auxiliar
     const payload = generatePayload();
-    console.log('Payload gerado pronto para a API:', payload);
-
-    // Chamar a API apenas se o modo selecionado for "ai" e houver texto transcrito
+    
     if (inputModeRef.current === 'ai' && payload.texto_transcrito.trim() !== '') {
       setIsProcessing(true);
       try {
+        // Usa Variáveis de Ambiente para esconder a chave de autenticação
+        const getAuthToken = () => {
+          // Nota: O ambiente de pré-visualização atual (ES2015) não suporta a sintaxe estática import . meta
+          // Utilizamos process.env para evitar erros de compilação na pré-visualização.
+          if (typeof process !== 'undefined' && process.env && process.env.REACT_APP_WEBHOOK_AUTH) {
+            return process.env.REACT_APP_WEBHOOK_AUTH;
+          }
+          // Atenção: No seu código final (Vite/Vercel), deverá usar a variável de ambiente do Vite:
+          // return import . meta . env . VITE_WEBHOOK_AUTH;
+          return null;
+        };
+
+        const authToken = getAuthToken();
+
+        if (!authToken) {
+          throw new Error("Variável de ambiente de autenticação não encontrada no projeto.");
+        }
+
         const response = await fetch('https://integra.arkmeds.com/webhook/c4a548f2-0797-4454-9365-e943468d6c04', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Basic d2ViaG9va191c2VyOjkxZGMxMTY2Njk='
+            'Authorization': authToken
           },
           body: JSON.stringify(payload)
         });
@@ -310,17 +301,14 @@ export default function App() {
         }
 
         const data = await response.json();
-        console.log('Resposta recebida do Webhook:', data);
 
         if (data && data.leituras) {
-          applyMockData(data); // A função aproveita a mesma estrutura para distribuir os dados
-        } else {
-          console.warn('A resposta da API não contém a propriedade "leituras":', data);
+          applyMockData(data);
         }
 
       } catch (error) {
         console.error('Erro ao chamar a API da IA:', error);
-        alert('Houve uma falha ao comunicar com a Inteligência Artificial. Verifique a consola para mais detalhes.');
+        alert(`Falha na API: ${error.message}\nCertifique-se de configurar a variável de ambiente corretamente.`);
       } finally {
         setIsProcessing(false);
       }
@@ -331,14 +319,11 @@ export default function App() {
     const currentRows = rowsRef.current;
     const currentCols = columnsRef.current;
 
-    // Fundir os dados recebidos com as linhas atuais baseando-se no VR ou ID
     const updatedRows = currentRows.map((row, index) => {
-      // Tentar encontrar correspondência pelo VR, senão pelo índice/id
       const leitura = data.leituras.find(l => String(l.vr) === String(row.vr)) || data.leituras[index];
       
       if (leitura) {
         const newVms = { ...row.vms };
-        // Mapear os valores medidos da resposta (vm1, vm2...) para as colunas atuais (VM1, VM2...)
         Object.keys(leitura.valores_medidos).forEach(key => {
           const upperKey = key.toUpperCase();
           if (currentCols.includes(upperKey)) {
@@ -358,15 +343,12 @@ export default function App() {
     setRows(updatedRows);
   };
 
-  // --- Renderização Principal ---
   if (view !== 'calibration') {
     return <div className="p-8 text-center text-[#244C5A]">Visualização não implementada.</div>;
   }
 
   return (
     <div style={{ fontFamily: "'Montserrat', sans-serif" }} className="min-h-screen bg-slate-50 text-[#244C5A] pb-24">
-      
-      {/* Barra de Navegação Superior */}
       <header className="bg-white px-4 py-4 flex items-center justify-between shadow-sm sticky top-0 z-10">
         <button className="text-[#0097A9] p-2 hover:bg-slate-100 rounded-full transition-colors">
           <Menu size={24} strokeWidth={2.5} />
@@ -378,8 +360,6 @@ export default function App() {
       </header>
 
       <main className="max-w-3xl mx-auto px-4 pt-6 space-y-6">
-        
-        {/* Título da Página */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <button className="text-[#244C5A] hover:bg-slate-200 p-1 rounded-lg transition-colors">
@@ -392,7 +372,6 @@ export default function App() {
           </button>
         </div>
 
-        {/* Etiquetas / Filtros */}
         <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-hide">
           <List size={24} className="text-slate-400 shrink-0" />
           <div className="flex items-center gap-2 bg-[#0097A9] text-white px-4 py-2 rounded-xl shrink-0 cursor-pointer shadow-md">
@@ -404,9 +383,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* --- SECÇÃO: TABELA DE CALIBRAÇÃO --- */}
         <section className="bg-white rounded-[24px] p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100">
-          
           <div className="flex justify-end mb-4">
             <button 
               onClick={handleAddColumn}
@@ -483,12 +460,9 @@ export default function App() {
           </div>
         </section>
 
-        {/* --- SECÇÃO: CAPTURA DE ÁUDIO IA --- */}
         <section className="bg-white rounded-[24px] p-6 shadow-xl border border-slate-100 relative overflow-hidden">
-          {/* Decoração de fundo com gradiente subtil */}
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#FFC72C] to-[#0097A9]"></div>
           
-          {/* Selector de Modos */}
           <div className="flex justify-center mb-6 mt-2">
             <div className="bg-slate-100 p-1.5 rounded-2xl flex items-center gap-1 shadow-inner">
               <button
@@ -551,7 +525,6 @@ export default function App() {
               )}
             </button>
 
-            {/* Área de Transcrição e Botão Payload */}
             <div className="w-full mt-4 bg-slate-50 rounded-2xl p-4 min-h-[80px] border border-slate-100">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
@@ -572,7 +545,6 @@ export default function App() {
           </div>
         </section>
 
-        {/* --- NOVA SECÇÃO: TESTE MANUAL DE JSON --- */}
         <section className="bg-white rounded-[24px] p-6 shadow-xl border border-slate-100 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-[#244C5A]"></div>
           
@@ -622,7 +594,6 @@ export default function App() {
 
       </main>
 
-      {/* --- MODAL DO PAYLOAD --- */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#244C5A]/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-[32px] p-8 max-w-2xl w-full shadow-2xl animate-in zoom-in-95 duration-200">
