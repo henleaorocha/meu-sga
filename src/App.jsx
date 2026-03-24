@@ -271,14 +271,12 @@ export default function App() {
       try {
         // Usa Variáveis de Ambiente para esconder a chave de autenticação
         const getAuthToken = () => {
-          // Nota: O ambiente de pré-visualização atual (ES2015) não suporta a sintaxe estática import . meta
-          // Utilizamos process.env para evitar erros de compilação na pré-visualização.
-          if (typeof process !== 'undefined' && process.env && process.env.REACT_APP_WEBHOOK_AUTH) {
-            return process.env.REACT_APP_WEBHOOK_AUTH;
-          }
-          // Atenção: No seu código final (Vite/Vercel), deverá usar a variável de ambiente do Vite:
-          // return import . meta . env . VITE_WEBHOOK_AUTH;
-          return null;
+          // Se o teu projeto foi criado com Vite (o mais comum):
+          return import.meta.env.VITE_WEBHOOK_AUTH;
+          
+          // NOTA: Se o teu projeto foi criado com Create React App, 
+          // apaga a linha de cima e tira os comentários da linha de baixo:
+          // return process.env.REACT_APP_WEBHOOK_AUTH;
         };
 
         const authToken = getAuthToken();
