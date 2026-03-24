@@ -36,6 +36,10 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [manualJson, setManualJson] = useState('{\n  "leituras": [\n    {\n      "id_linha": 1,\n      "vr": 60,\n      "valores_medidos": {\n        "vm1": 60.5,\n        "vm2": 62,\n        "vm3": 63\n      }\n    }\n  ]\n}'); // Estado para o input manual
   
+  // --- Novos Estados: Modo Regex ---
+  const [inputMode, setInputMode] = useState('ai'); // 'ai' ou 'regex'
+  const [activeCell, setActiveCell] = useState({ rIndex: 0, cIndex: 0 });
+
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const recognitionRef = useRef(null);
@@ -43,6 +47,15 @@ export default function App() {
   // Refs para manter o estado atualizado dentro dos eventos do SpeechRecognition
   const fullTranscriptRef = useRef(''); 
   const isRecordingRef = useRef(false);
+  const inputModeRef = useRef('ai');
+  const activeCellRef = useRef({ rIndex: 0, cIndex: 0 });
+  const columnsRef = useRef(columns);
+  const rowsRef = useRef(rows);
+
+  // --- Sincronização de Refs ---
+  useEffect(() => { inputModeRef.current = inputMode; }, [inputMode]);
+  useEffect(() => { columnsRef.current = columns; }, [columns]);
+  useEffect(() => { rowsRef.current = rows; }, [rows]);
 
   // Injetar fonte Montserrat
   useEffect(() => {
@@ -103,6 +116,57 @@ export default function App() {
           // Se a API identificar que o pedaço de frase está finalizado, guardamos no final
           if (event.results[i].isFinal) {
             newFinalTranscript += transcriptSegment + ' ';
+            
+            // --- NOVA LÓGICA MODO REGEX (SEQUENCIAL) ---
+            if (inputModeRef.current === 'regex') {
+              const matches = transcriptSegment.match(/\d+([.,]\d{1,2})?/g);
+              if (matches) {
+                const updates = [];
+                let currentRIdx = activeCellRef.current.rIndex;
+                let currentCIdx = activeCellRef.current.cIndex;
+
+                matches.forEach(match => {
+                  if (currentRIdx < rowsRef.current.length) {
+                    updates.push({
+                      rIndex: currentRIdx,
+                      cIndex: currentCIdx,
+                      value: match.replace(',', '.')
+                    });
+
+                    // Avançar célula
+                    currentCIdx++;
+                    if (currentCIdx >= columnsRef.current.length) {
+                      currentCIdx = 0;
+                      currentRIdx++;
+                    }
+                  }
+                });
+
+                // Atualizar refs e estados visuais
+                activeCellRef.current = { rIndex: currentRIdx, cIndex: currentCIdx };
+                setActiveCell({ rIndex: currentRIdx, cIndex: currentCIdx });
+
+                // Aplicar as atualizações na tabela num único ciclo (batching)
+                if (updates.length > 0) {
+                  setRows(prevRows => {
+                    let newRows = [...prevRows];
+                    updates.forEach(update => {
+                      const colName = columnsRef.current[update.cIndex];
+                      newRows[update.rIndex] = {
+                        ...newRows[update.rIndex],
+                        vms: { 
+                          ...newRows[update.rIndex].vms, 
+                          [colName]: update.value 
+                        }
+                      };
+                    });
+                    return newRows;
+                  });
+                }
+              }
+            }
+            // --- FIM LÓGICA MODO REGEX ---
+
           } else {
             // Senão, é um pedaço provisório em tempo real
             interimTranscript += transcriptSegment;
@@ -326,13 +390,23 @@ export default function App() {
                         placeholder="-"
                       />
                     </td>
-                    {columns.map((col) => (
-                      <td key={`${row.id}-${col}`} className="p-0 border-r border-slate-100 last:border-r-0">
+                    {columns.map((col, cIndex) => (
+                      <td key={`${row.id}-${col}`} className="p-0 border-r border-slate-100 last:border-r-0 relative">
                         <input
                           type="number"
                           value={row.vms[col]}
                           onChange={(e) => handleVmChange(row.id, col, e.target.value)}
-                          className="w-full h-full min-h-[48px] text-center text-slate-700 font-medium text-base outline-none bg-transparent focus:bg-slate-100 transition-colors"
+                          onFocus={() => {
+                            if (inputMode === 'regex') {
+                              setActiveCell({ rIndex: rowIndex, cIndex: cIndex });
+                              activeCellRef.current = { rIndex: rowIndex, cIndex: cIndex };
+                            }
+                          }}
+                          className={`w-full h-full min-h-[48px] text-center text-slate-700 font-medium text-base outline-none transition-colors ${
+                            inputMode === 'regex' && activeCell.rIndex === rowIndex && activeCell.cIndex === cIndex
+                              ? 'bg-yellow-50 ring-2 ring-inset ring-[#FFC72C] z-10 relative' 
+                              : 'bg-transparent focus:bg-slate-100'
+                          }`}
                           placeholder="-"
                         />
                       </td>
@@ -359,10 +433,40 @@ export default function App() {
           {/* Decoração de fundo com gradiente subtil */}
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#FFC72C] to-[#0097A9]"></div>
           
+          {/* Selector de Modos */}
+          <div className="flex justify-center mb-6 mt-2">
+            <div className="bg-slate-100 p-1.5 rounded-2xl flex items-center gap-1 shadow-inner">
+              <button
+                onClick={() => setInputMode('ai')}
+                className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                  inputMode === 'ai' 
+                    ? 'bg-white text-[#0097A9] shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Modo IA (Texto Livre)
+              </button>
+              <button
+                onClick={() => setInputMode('regex')}
+                className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 ${
+                  inputMode === 'regex' 
+                    ? 'bg-white text-[#FFC72C] shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Sequencial (Regex)
+              </button>
+            </div>
+          </div>
+
           <div className="flex flex-col items-center gap-4">
-            <h3 className="text-lg font-semibold text-[#244C5A]">Preenchimento por Voz (IA)</h3>
+            <h3 className="text-lg font-semibold text-[#244C5A]">
+              {inputMode === 'ai' ? 'Preenchimento por Voz (IA)' : 'Preenchimento Sequencial (Regex)'}
+            </h3>
             <p className="text-sm text-slate-500 text-center max-w-sm">
-              Dite os valores medidos sequencialmente e a nossa Inteligência Artificial preencherá a tabela automaticamente.
+              {inputMode === 'ai' 
+                ? 'Dite os valores de forma natural e a nossa Inteligência Artificial preencherá a tabela automaticamente.'
+                : 'Dite apenas os números. O sistema preencherá a tabela avançando célula a célula automaticamente.'}
             </p>
 
             <button
